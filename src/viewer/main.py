@@ -39,6 +39,6 @@ with col2:
     st.header("Transcription")
 
     try:
-        st.write(Path(f"/{chisme_dir}/{selected_chisme}/page_{selected_page:03d}_img_001.txt").read_text())
+        st.write(Path(f"{chisme_dir}/{selected_chisme}/page_{selected_page:03d}_img_001.txt").read_text())
     except:
         st.warning("No transcription found")
