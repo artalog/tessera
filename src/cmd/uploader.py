@@ -14,7 +14,7 @@ from googleapiclient.http import MediaInMemoryUpload
 SERVICE_ACCOUNT_FILE = "credentials.json"
 
 # Path to the local Git repo (root) that we want to scan for .txt files
-LOCAL_REPO_PATH = "./data/Archivos_Scan_RBML/Chisme"
+LOCAL_REPO_PATH = "./data/Archivos_Scan_RBML/Archives"
 
 # JSON file to store ID mappings (checked into your Git repo for history)
 MAPPING_JSON_PATH = os.path.join(LOCAL_REPO_PATH, "drive_map.json")
