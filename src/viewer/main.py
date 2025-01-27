@@ -11,11 +11,11 @@ st.set_page_config(layout="wide")
 # ------------------------------------------------------------------------------
 # CONFIG
 # ------------------------------------------------------------------------------
-# 1. Path to your local "chisme" directory containing subfolders and images
-chisme_dir = Path("./data/Archivos_Scan_RBML/Chisme/")
+# 1. Path to your local "archive" directory containing subfolders and images
+archive_dir = Path("./data/Archivos_Scan_RBML/Archives/")
 
 # 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
-DRIVE_MAP_PATH = chisme_dir / Path("./drive_map.json")
+DRIVE_MAP_PATH = archive_dir / Path("./drive_map.json")
 
 def load_drive_map(json_path: Path):
     if not json_path.exists():
@@ -66,18 +66,18 @@ def main():
     # Load the mapping of local .txt -> Google Doc IDs
     drive_map = load_drive_map(DRIVE_MAP_PATH)
 
-    # Discover subdirectories under chisme_dir
-    chisme_dirs = [x.name for x in chisme_dir.iterdir() if x.is_dir()]
+    # Discover subdirectories under archive_dir
+    archive_dirs = [x.name for x in archive_dir.iterdir() if x.is_dir()]
 
     # UI: Layout with two columns for selectboxes
-    col_chisme, col_page = st.columns([0.7, 0.3])
+    col_archive, col_page = st.columns([0.7, 0.3])
 
-    # Select a "chisme"
-    selected_chisme = col_chisme.selectbox("Select a chisme", chisme_dirs)
+    # Select a "archive"
+    selected_archive = col_archive.selectbox("Select an archive", archive_dirs)
 
     # Count the pages by scanning .jpeg files
-    pattern = f"{selected_chisme}/page_*.jpeg"
-    n_pages = len(list(chisme_dir.glob(pattern)))
+    pattern = f"{selected_archive}/page_*.jpeg"
+    n_pages = len(list(archive_dir.glob(pattern)))
 
     # Select the page
     selected_page = col_page.selectbox("Select a page", range(1, n_pages + 1))
@@ -89,7 +89,7 @@ def main():
     with col1:
         st.header("Scan")
         try:
-            image_path = chisme_dir / selected_chisme / f"page_{selected_page:03d}_img_001.jpeg"
+            image_path = archive_dir / selected_archive / f"page_{selected_page:03d}_img_001.jpeg"
             st.image(str(image_path))
         except Exception:
             st.warning("No image found")
@@ -100,7 +100,7 @@ def main():
 
         # Build the local .txt path key as stored in drive_map.json
         # Adjust if your drive_map keys differ.
-        map_key = f"{selected_chisme}/page_{selected_page:03d}_img_001.txt"
+        map_key = f"{selected_archive}/page_{selected_page:03d}_img_001.txt"
 
         if map_key not in drive_map["files"]:
             st.warning("No Google Doc mapping found for this page.")
