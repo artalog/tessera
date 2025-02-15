@@ -1,6 +1,5 @@
 import os
 import json
-import io
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -26,6 +25,7 @@ DRIVE_PARENT_FOLDER_ID = "1eHiqnzJHjiB65_Vaz9CgmvYH_oyatwmC"
 # MAIN LOGIC
 # ------------------------------
 
+
 def load_mapping():
     """
     Load the local JSON that stores folder/file IDs.
@@ -37,8 +37,9 @@ def load_mapping():
     else:
         return {
             "folders": {},  # maps local folder path -> drive folder ID
-            "files": {}     # maps local file path -> drive file (Doc) ID
+            "files": {},  # maps local file path -> drive file (Doc) ID
         }
+
 
 def save_mapping(mapping):
     """
@@ -47,32 +48,37 @@ def save_mapping(mapping):
     with open(MAPPING_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(mapping, f, indent=2)
 
+
 def create_folder_if_not_exists(drive_service, mapping, local_folder_path):
     """
     Ensure a matching folder in Drive exists for `local_folder_path`.
     Returns the drive folder ID.
-    
+
     `local_folder_path` is a path *relative* to LOCAL_REPO_PATH, e.g. "" for top,
     "subfolder", "subfolder/nested", etc.
     """
     # If we already have a folder ID in the mapping, just return it
     if local_folder_path in mapping["folders"]:
         return mapping["folders"][local_folder_path]
-    
+
     # We need to create a new folder in Drive
-    folder_name = os.path.basename(local_folder_path) if local_folder_path else LOCAL_REPO_PATH
+    folder_name = (
+        os.path.basename(local_folder_path) if local_folder_path else LOCAL_REPO_PATH
+    )
     if folder_name == LOCAL_REPO_PATH:
         # If local_folder_path == "", we can name it something like the repo root name
         folder_name = os.path.basename(os.path.abspath(LOCAL_REPO_PATH))
 
     # If there's a parent folder in the local structure, find its Drive ID for nesting
     parent_id = DRIVE_PARENT_FOLDER_ID
-    
+
     if local_folder_path:
         # e.g. "some/subfolder" -> parent is "some"
         parent_local = os.path.dirname(local_folder_path)
         if parent_local:  # if not empty
-            parent_id = create_folder_if_not_exists(drive_service, mapping, parent_local)
+            parent_id = create_folder_if_not_exists(
+                drive_service, mapping, parent_local
+            )
         else:
             # There's only one level, so the parent is DRIVE_PARENT_FOLDER_ID
             parent_id = DRIVE_PARENT_FOLDER_ID
@@ -80,18 +86,19 @@ def create_folder_if_not_exists(drive_service, mapping, local_folder_path):
     # Create the folder in Drive
     folder_metadata = {
         "name": folder_name,
-        "mimeType": "application/vnd.google-apps.folder"
+        "mimeType": "application/vnd.google-apps.folder",
     }
     if parent_id:
         folder_metadata["parents"] = [parent_id]
 
     folder = drive_service.files().create(body=folder_metadata, fields="id").execute()
     folder_id = folder["id"]
-    
+
     # Store in mapping
     mapping["folders"][local_folder_path] = folder_id
     save_mapping(mapping)  # Save immediately so partial progress is persisted
     return folder_id
+
 
 def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_content):
     """
@@ -100,7 +107,7 @@ def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_conte
     """
     if local_file_path in mapping["files"]:
         return mapping["files"][local_file_path]
-    
+
     # Example doc name: filename without extension
     doc_name = os.path.splitext(os.path.basename(local_file_path))[0]
 
@@ -108,7 +115,9 @@ def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_conte
     parent_local_folder = os.path.dirname(local_file_path)
     folder_id = None
     if parent_local_folder:
-        folder_id = create_folder_if_not_exists(drive_service, mapping, parent_local_folder)
+        folder_id = create_folder_if_not_exists(
+            drive_service, mapping, parent_local_folder
+        )
     else:
         # The file is at the root of the repo
         folder_id = DRIVE_PARENT_FOLDER_ID
@@ -123,17 +132,15 @@ def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_conte
 
     # The media body is our plain text
     media_body = MediaInMemoryUpload(
-        text_content.encode("utf-8"),
-        mimetype="text/plain",
-        resumable=False
+        text_content.encode("utf-8"), mimetype="text/plain", resumable=False
     )
 
     # Create the file
-    new_file = drive_service.files().create(
-        body=file_metadata,
-        media_body=media_body,
-        fields="id"
-    ).execute()
+    new_file = (
+        drive_service.files()
+        .create(body=file_metadata, media_body=media_body, fields="id")
+        .execute()
+    )
 
     doc_id = new_file["id"]
     mapping["files"][local_file_path] = doc_id
@@ -141,11 +148,11 @@ def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_conte
 
     return doc_id
 
+
 def main():
     # 1. Auth for Drive
     creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE,
-        scopes=["https://www.googleapis.com/auth/drive"]
+        SERVICE_ACCOUNT_FILE, scopes=["https://www.googleapis.com/auth/drive"]
     )
     drive_service = build("drive", "v3", credentials=creds)
 
@@ -176,6 +183,7 @@ def main():
                 print(f"[OK] {local_file_path} -> Doc ID: {doc_id}")
 
     print("Done. All .txt files processed.")
+
 
 if __name__ == "__main__":
     main()

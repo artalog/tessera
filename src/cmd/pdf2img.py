@@ -13,7 +13,10 @@ def extract_images_from_pdf(pdf_path, output_folder):
             base_image = pdf_document.extract_image(xref)
             image_bytes = base_image["image"]
             image_ext = base_image["ext"]
-            with open(f"{output_folder}/page_{page_number+1:03d}_img_{img_index+1:03d}.{image_ext}", "wb") as img_file:
+            with open(
+                f"{output_folder}/page_{page_number + 1:03d}_img_{img_index + 1:03d}.{image_ext}",
+                "wb",
+            ) as img_file:
                 img_file.write(image_bytes)
 
 
@@ -26,4 +29,3 @@ if __name__ == "__main__":
     os.makedirs(output_folder, exist_ok=True)
 
     extract_images_from_pdf(sys.argv[1], output_folder)
-

@@ -1,4 +1,3 @@
-import os
 import json
 from pathlib import Path
 
@@ -17,6 +16,7 @@ archive_dir = Path("./data/Archivos_Scan_RBML/Archives/")
 # 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
 DRIVE_MAP_PATH = archive_dir / Path("./drive_map.json")
 
+
 def load_drive_map(json_path: Path):
     if not json_path.exists():
         raise FileNotFoundError(f"File not found: {json_path}")
@@ -28,8 +28,7 @@ def get_credentials():
     """Load service account info from Streamlit secrets and create credentials."""
     service_account_info = st.secrets["service_account"]
     creds = service_account.Credentials.from_service_account_info(
-        service_account_info,
-        scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        service_account_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
     return creds
 
@@ -42,14 +41,15 @@ def get_gdoc_html(doc_id: str) -> str:
     drive_service = build("drive", "v3", credentials=creds)
 
     # Export the doc as HTML
-    request = drive_service.files().export(fileId=doc_id, mimeType='text/html')
+    request = drive_service.files().export(fileId=doc_id, mimeType="text/html")
     html_content = request.execute()
 
     # It often returns bytes, so decode if needed
     if isinstance(html_content, bytes):
-        html_content = html_content.decode('utf-8', errors='replace')
+        html_content = html_content.decode("utf-8", errors="replace")
 
-    return html_content 
+    return html_content
+
 
 CSS_OVERRIDE = """
 <style>
@@ -89,7 +89,11 @@ def main():
     with col1:
         st.header("Scan")
         try:
-            image_path = archive_dir / selected_archive / f"page_{selected_page:03d}_img_001.jpeg"
+            image_path = (
+                archive_dir
+                / selected_archive
+                / f"page_{selected_page:03d}_img_001.jpeg"
+            )
             st.image(str(image_path))
         except Exception:
             st.warning("No image found")
@@ -137,6 +141,6 @@ def main():
                 # Finally, display the doc text
                 st.markdown(st.session_state[doc_key], unsafe_allow_html=True)
 
+
 if __name__ == "__main__":
     main()
-

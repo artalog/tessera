@@ -8,11 +8,6 @@ from openai import OpenAI
 from io import BytesIO
 
 
-def _get_transcription_path(image_path):
-    transcription_path = os.path.join(dir_name, image_name + ".txt")
-    return transcription_path, image_name
-
-
 @dataclass(frozen=True)
 class PhotoTranscription:
     image_path: str
@@ -28,7 +23,7 @@ class PhotoTranscription:
         with open(self.image_path, "rb") as f:
             print(f"Reading image: {self.image_path}")
             image_bytes = f.read()
-            #image_bytes = _resize_image(image_bytes)
+            # image_bytes = _resize_image(image_bytes)
             image_base64 = _encode_image(image_bytes)
 
         return image_base64
@@ -40,7 +35,6 @@ class PhotoTranscription:
     @property
     def has_annotation(self):
         return os.path.exists(self._annotation_path)
-
 
     @property
     def transcription(self):
@@ -70,11 +64,9 @@ class PhotoTranscription:
         image_name, _ = os.path.splitext(self.image_path)
         return image_name + ".txt"
 
-
     def save_transcription(self, transcription: str):
         with open(self._transcription_path, "w") as f:
             f.write(transcription)
-
 
     @property
     def assistant_message(self):
@@ -105,7 +97,6 @@ class PhotoTranscription:
             ],
         }
 
-
     @property
     def system_message(self):
         annotation = self.annotation
@@ -113,14 +104,14 @@ class PhotoTranscription:
         if not annotation:
             raise ValueError("Annotation must be provided for system message")
 
-        return  {
+        return {
             "role": "user",
             "content": [
                 _image_to_content(self.image_base64),
                 {
                     "type": "text",
                     "text": f"Example of the best manual transcription by a human of the image above:\n{annotation}",
-                }
+                },
             ],
         }
 
@@ -134,13 +125,18 @@ def _images_to_messages(base64_images, max_images_per_message=4):
                     "type": "text",
                     "text": "Transcribe the following image",
                 },
-                *[_image_to_content(base64_image) for base64_image in base64_images[x:x+max_images_per_message]],
+                *[
+                    _image_to_content(base64_image)
+                    for base64_image in base64_images[x : x + max_images_per_message]
+                ],
             ],
-        } for x in range(0, len(base64_images), max_images_per_message)
+        }
+        for x in range(0, len(base64_images), max_images_per_message)
     ]
 
 
 client = OpenAI()
+
 
 def _encode_image(image_bytes):
     return base64.b64encode(image_bytes).decode("utf-8")
@@ -149,7 +145,7 @@ def _encode_image(image_bytes):
 def _resize_image(image_bytes, max_size=1024):
     with Image.open(BytesIO(image_bytes)) as img:
         img.thumbnail((max_size, max_size), Image.LANCZOS)
-        
+
         output_buffer = BytesIO()
         img.save(output_buffer, format="JPEG")
         # save the image to file for testing
@@ -178,14 +174,14 @@ def _load_images(images_dir):
     return images
 
 
-
 def _make_system_messages(images):
-    messages = [{
-        "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": """You are an expert Spanish colonial era archivist of documents from 1772 in Puebla, Mexico. The documents are marriage dispensations for the racialized communities of New Spain. The documents were handwritten by notaries and archbishops. You are also an expert in reading cursive and able to spot similar characters.
+    messages = [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": """You are an expert Spanish colonial era archivist of documents from 1772 in Puebla, Mexico. The documents are marriage dispensations for the racialized communities of New Spain. The documents were handwritten by notaries and archbishops. You are also an expert in reading cursive and able to spot similar characters.
 
 Here are instructions for transcribing the photos of documents:
 - A user will provide you with photos of the documents. You will transcribe the photos into text.
@@ -194,12 +190,12 @@ Here are instructions for transcribing the photos of documents:
 - Use human transcriptions as examples to guide transcribing.
 - If uncertain, use '[...]'
 
-The user will provide the best human-transcribed pages of documents from the same archive that should be used as examples to transcribe newly provided photos:"""
-            },
-        ],
-    }]
+The user will provide the best human-transcribed pages of documents from the same archive that should be used as examples to transcribe newly provided photos:""",
+                },
+            ],
+        }
+    ]
 
-    
     messages += [image.system_message for image in images]
     return messages
 
@@ -215,6 +211,7 @@ def _request(messages):
 
 
 MAX_PHOTOS_PER_CONVERSATION = 4
+
 
 def _transcribe_images(system_images, user_images):
     messages = _make_system_messages(system_images)
@@ -233,10 +230,11 @@ def _transcribe_images(system_images, user_images):
         raise ValueError("All images have been transcribed")
 
     print(f"Transcribing image: {last_image.image_path}")
-    response = _request(messages + user_messages[len(user_messages)-MAX_PHOTOS_PER_CONVERSATION:])
+    response = _request(
+        messages + user_messages[len(user_messages) - MAX_PHOTOS_PER_CONVERSATION :]
+    )
 
     return response, last_image
-
 
 
 def main(system_images_dir, user_images_dir):

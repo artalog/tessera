@@ -1,24 +1,21 @@
-[tool.poetry]
-name = "chisme-labs"
+[project]
+name = "chismelabs"
 version = "0.1.0"
-description = ""
-authors = ["Andrey Elenskiy <a@elenskiy.com>"]
-license = "MIT"
+description = "Add your description here"
 readme = "README.md"
-package-mode = false
+requires-python = ">=3.13"
+dependencies = [
+    "google-api-python-client>=2.161.0",
+    "google-auth>=2.38.0",
+    "openai>=1.63.0",
+    "pdfminer>=20191125",
+    "pdfplumber>=0.11.5",
+    "pillow>=11.1.0",
+    "pymupdf>=1.25.3",
+    "streamlit>=1.42.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-pdfminer = "^20191125"
-pdfplumber = "^0.11.5"
-pymupdf = "^1.25.1"
-openai = "^1.58.1"
-pillow = "^11.0.0"
-streamlit = "^1.41.1"
-google-auth = "^2.38.0"
-google-api-python-client = "^2.159.0"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "ruff>=0.9.6",
+]
