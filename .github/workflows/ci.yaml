@@ -20,5 +20,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version-file: "pyproject.toml"
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
       - name: "Run ruff"
-        run: uv run ruff check
+        run: uvx ruff check
