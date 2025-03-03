@@ -1,0 +1,86 @@
+{
+  "people": [
+    {
+      "name": "S.° Gobernador Gen.ᶫ",
+      "role": "Governor / Official"
+    },
+    {
+      "name": "Antonio Ramírez (C. Antᵗᵒ Ramírez)",
+      "role": "Contrayente (Bridegroom)",
+      "notes": "Mulato libre"
+    },
+    {
+      "name": "María Magdalena",
+      "role": "Contrayente (Bride)",
+      "notes": "Mulata"
+    },
+    {
+      "name": "Illᵐo S.S. Venero Ilvto [?] Perdido",
+      "role": "Ecclesiastical authority"
+    },
+    {
+      "name": "Maxᵗ. D. Antᵗ. Maq[?]",
+      "role": "Ecclesiastical official or notary"
+    },
+    {
+      "name": "S.B. Dᶜn Manuel Inachen, Baxnientos",
+      "role": "Signatory or official"
+    },
+    {
+      "name": "Nᵒ Sor Pᵃdre Clemente Décimo",
+      "role": "Papal / high church authority"
+    },
+    {
+      "name": "D. Barrientos",
+      "role": "Signatory / Official"
+    },
+    {
+      "name": "Luis Medina y León",
+      "role": "Signatory / Official"
+    },
+    {
+      "name": "Notᶜ Hiciano? de Govᵒ",
+      "role": "Notary or government official"
+    }
+  ],
+  "places": [
+    {
+      "name": "Zacoalpa",
+      "type": "Town / Region"
+    },
+    {
+      "name": "Curato de Zacoalpa",
+      "type": "Parish / Church District"
+    }
+  ],
+  "dates": [
+    {
+      "date": "7 Julio de 1772"
+    }
+  ],
+  "relationships": [
+    {
+      "type": "Marriage Intent",
+      "parties": ["Antonio Ramírez", "María Magdalena"],
+      "location": "Zacoalpa",
+      "impediment": "4th-degree consanguinity"
+    },
+    {
+      "type": "Addressee / Petition",
+      "petitioner": ["Antonio Ramírez", "María Magdalena"],
+      "recipient": "S.° Gobernador Gen.ᶫ"
+    },
+    {
+      "type": "Dispensation Authority",
+      "authority": ["Illᵐo S.S. Venero Ilvto [?] Perdido", "Maxᵗ. D. Antᵗ. Maq[?]"]
+    },
+    {
+      "type": "Signatories",
+      "signers": ["D. Barrientos", "Luis Medina y León", "Notᶜ Hiciano? de Govᵒ"]
+    },
+    {
+      "type": "Ecclesiastical Oversight",
+      "higherAuthority": "Nᵒ Sor Pᵃdre Clemente Décimo"
+    }
+  ]
+}

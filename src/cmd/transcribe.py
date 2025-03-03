@@ -3,10 +3,18 @@ import json
 import os
 import sys
 import base64
+import logging
 from PIL import Image
 from openai import OpenAI
 from io import BytesIO
 
+
+log = logging.getLogger(__name__)
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.DEBUG,
+)
 
 @dataclass(frozen=True)
 class PhotoTranscription:
@@ -21,7 +29,7 @@ class PhotoTranscription:
     @property
     def image_base64(self):
         with open(self.image_path, "rb") as f:
-            print(f"Reading image: {self.image_path}")
+            log.info(f"Reading image: {self.image_path}")
             image_bytes = f.read()
             # image_bytes = _resize_image(image_bytes)
             image_base64 = _encode_image(image_bytes)
@@ -40,7 +48,7 @@ class PhotoTranscription:
     def transcription(self):
         t = None
         if self.has_transcription:
-            print(f"Reading transcription: {self._transcription_path}")
+            log.info(f"Reading transcription: {self._transcription_path}")
             with open(self._transcription_path, "r") as f:
                 t = f.read()
         return t
@@ -49,7 +57,7 @@ class PhotoTranscription:
     def annotation(self):
         t = None
         if self.has_annotation:
-            print(f"Reading annotation: {self._annotation_path}")
+            log.info(f"Reading annotation: {self._annotation_path}")
             with open(self._annotation_path, "r") as f:
                 t = f.read()
         return t
@@ -201,9 +209,9 @@ The user will provide the best human-transcribed pages of documents from the sam
 
 
 def _request(messages):
-    print(len(json.dumps(messages)))
+    log.info(len(json.dumps(messages)))
     return client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.5-preview",
         temperature=1,
         max_completion_tokens=16383,
         messages=messages,
@@ -229,7 +237,7 @@ def _transcribe_images(system_images, user_images):
     if not last_image:
         raise ValueError("All images have been transcribed")
 
-    print(f"Transcribing image: {last_image.image_path}")
+    log.info(f"Transcribing image: {last_image.image_path}")
     response = _request(
         messages + user_messages[len(user_messages) - MAX_PHOTOS_PER_CONVERSATION :]
     )
@@ -244,7 +252,7 @@ def main(system_images_dir, user_images_dir):
     while True:
         response, image = _transcribe_images(system_images, user_images)
         transcription_text = response.choices[0].message.content
-        print(transcription_text)
+        log.info(transcription_text)
 
         image.save_transcription(transcription_text)
 
