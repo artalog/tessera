@@ -1,3 +1,4 @@
+from enum import StrEnum
 import json
 from pathlib import Path
 
@@ -51,6 +52,15 @@ def get_gdoc_html(doc_id: str) -> str:
     return html_content
 
 
+def get_transcription_key(archive: str, page: int) -> str:
+    return f"{archive}/page_{page:03d}_img_001.txt"
+
+
+def get_transcription_path(archive: str, page: int) -> Path:
+    return archive_dir / Path(f"{archive}/page_{page:03d}_img_001.txt")
+
+
+
 CSS_OVERRIDE = """
 <style>
 /* Target the main Streamlit Markdown container */
@@ -60,6 +70,11 @@ div[data-testid="stMarkdownContainer"] * {
 }
 </style>
 """
+
+
+class Source(StrEnum):
+    GOOGLE_DOCS = "Google Docs"
+    CHAT_GPT = "Chat GPT"
 
 
 def main():
@@ -77,10 +92,16 @@ def main():
 
     # Count the pages by scanning .jpeg files
     pattern = f"{selected_archive}/page_*.jpeg"
-    n_pages = len(list(archive_dir.glob(pattern)))
+    # extract page numbers from file names
+    page_numbers = [
+        int(p.name.split("_")[1])
+        for p in archive_dir.glob(pattern)
+        if p.is_file()
+    ]
+    page_numbers.sort()
 
     # Select the page
-    selected_page = col_page.selectbox("Select a page", range(1, n_pages + 1))
+    selected_page = col_page.selectbox("Select a page", page_numbers)
 
     # Prepare columns for Scan (image) and Transcription (text)
     col1, col2 = st.columns(2)
@@ -101,45 +122,55 @@ def main():
     # Right column: Display the transcription from Google Docs
     with col2:
         st.header("Transcription")
+        t_source = st.selectbox("Source", [e.value for e in Source])
 
-        # Build the local .txt path key as stored in drive_map.json
-        # Adjust if your drive_map keys differ.
-        map_key = f"{selected_archive}/page_{selected_page:03d}_img_001.txt"
+        match t_source:
+            case Source.CHAT_GPT:
+                # read the .txt file and display the transcription
+                t_path = get_transcription_path(selected_archive, selected_page)
+                try:
+                    with open(t_path, "r", encoding="utf-8") as f:
+                        st.markdown(f.read())
+                except FileNotFoundError:   
+                    st.warning("No transcription found for this page.")
+            case Source.GOOGLE_DOCS:
+                # Build the local .txt path key as stored in drive_map.json
+                # Adjust if your drive_map keys differ.
+                map_key = get_transcription_key(selected_archive, selected_page)
+                if map_key not in drive_map["files"]:
+                    st.warning("No Google Doc mapping found for this page.")
+                else:
+                    doc_id = drive_map["files"][map_key]
 
-        if map_key not in drive_map["files"]:
-            st.warning("No Google Doc mapping found for this page.")
-        else:
-            doc_id = drive_map["files"][map_key]
+                    # A small horizontal layout for Refresh & Edit
+                    refresh_col, edit_col = st.columns([0.15, 0.85])
 
-            # A small horizontal layout for Refresh & Edit
-            refresh_col, edit_col = st.columns([0.15, 0.85])
+                    with st.spinner("Loading transcription..."):
+                        # If user clicks "Refresh", re-fetch from the Docs API
+                        if refresh_col.button("Refresh"):
+                            st.session_state[f"doc_{doc_id}"] = get_gdoc_html(doc_id)
 
-            with st.spinner("Loading transcription..."):
-                # If user clicks "Refresh", re-fetch from the Docs API
-                if refresh_col.button("Refresh"):
-                    st.session_state[f"doc_{doc_id}"] = get_gdoc_html(doc_id)
+                        # Get or fetch the doc text from session_state to persist across re-renders
+                        doc_key = f"doc_{doc_id}"
+                        if doc_key not in st.session_state:
+                            # First load
+                            st.session_state[doc_key] = get_gdoc_html(doc_id)
 
-                # Get or fetch the doc text from session_state to persist across re-renders
-                doc_key = f"doc_{doc_id}"
-                if doc_key not in st.session_state:
-                    # First load
-                    st.session_state[doc_key] = get_gdoc_html(doc_id)
+                        # Show an edit icon that links to the Google Doc in a new tab
+                        edit_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+                        edit_icon = "✎"
+                        edit_html = f"""
+                        <p style="text-align:right; margin-top: 10px;">
+                            <a href="{edit_url}" target="_blank" style="text-decoration:none;font-size:16px;">
+                                {edit_icon} Edit
+                            </a>
+                        </p>
+                        """
+                        edit_col.markdown(CSS_OVERRIDE, unsafe_allow_html=True)
+                        edit_col.markdown(edit_html, unsafe_allow_html=True)
 
-                # Show an edit icon that links to the Google Doc in a new tab
-                edit_url = f"https://docs.google.com/document/d/{doc_id}/edit"
-                edit_icon = "✎"
-                edit_html = f"""
-                <p style="text-align:right; margin-top: 10px;">
-                    <a href="{edit_url}" target="_blank" style="text-decoration:none;font-size:16px;">
-                        {edit_icon} Edit
-                    </a>
-                </p>
-                """
-                edit_col.markdown(CSS_OVERRIDE, unsafe_allow_html=True)
-                edit_col.markdown(edit_html, unsafe_allow_html=True)
-
-                # Finally, display the doc text
-                st.markdown(st.session_state[doc_key], unsafe_allow_html=True)
+                        # Finally, display the doc text
+                        st.markdown(st.session_state[doc_key], unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

@@ -72,9 +72,18 @@ class PhotoTranscription:
         image_name, _ = os.path.splitext(self.image_path)
         return image_name + ".txt"
 
+    @property
+    def _response_path(self):
+        image_name, _ = os.path.splitext(self.image_path)
+        return image_name + "_response.json"
+
     def save_transcription(self, transcription: str):
         with open(self._transcription_path, "w") as f:
             f.write(transcription)
+
+    def save_response(self, response):
+        with open(self._response_path, "w") as f:
+            f.write(json.dumps(response))
 
     @property
     def assistant_message(self):
