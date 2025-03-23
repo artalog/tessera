@@ -1,13 +1,11 @@
 import os
 import sys
-import tessera.pipelines.pdf_to_images as pdf_to_images
-import tessera.pipelines.image_to_transcription as image_to_transcription
-
+from tessera.pipelines import pdf_to_images, image_to_transcription, upload_gdrive
 from hamilton import driver
 from hamilton_sdk import adapters
 
-# Use the first command-line argument as the PDF directory if provided.
-directory = "../../data/Archivos_Scan_RBML"
+directory = os.path.dirname(os.path.realpath(__file__)) + "/../../data/Archivos_Scan_RBML"
+
 
 tracker = adapters.HamiltonTracker(
    project_id=1,
@@ -20,6 +18,7 @@ d = (
     driver.Builder()
     .with_modules(pdf_to_images)
     .with_modules(image_to_transcription)
+    .with_modules(upload_gdrive)
     .with_adapters(tracker)
     .with_cache()
     .build()
@@ -28,21 +27,23 @@ d = (
 
 # Execute the pipeline, retrieving the aggregated image paths.
 results = d.execute(['all_extracted_images'], overrides={'data_directory': directory})
+extracted_images = results['all_extracted_images']
 
-# each value in results contain list of all images extracted (full paths), aggreage a list of common
-# directories
 common_directories = []
-for image_paths in results.values():
+for key, image_paths in extracted_images.items():
     common_directories.append(os.path.commonpath(image_paths))
 
 
-
 annotation_path = directory + '/annotated/Folder 762'
-
-    
 
 
 results = d.execute(['all_transcribed_archives'], inputs={
     'archive_paths': common_directories,
     'annotation_path': annotation_path
+})
+
+
+
+results = d.execute(['upload_gdrive'], inputs={
+    'image_folders': common_directories,
 })
