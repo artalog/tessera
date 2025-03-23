@@ -148,6 +148,38 @@ def create_doc_if_not_exists(drive_service, mapping, local_file_path, text_conte
 
     return doc_id
 
+def format_metadata(filename: str, transcription_google_drive_doc_id: str, is_directory: bool) -> dict:
+    return {
+        "filename": filename,
+        "is_directory": is_directory,
+        "transcription_google_drive_doc_id": transcription_google_drive_doc_id,
+    }
+
+import hashlib
+
+def sha256_checksum(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def migrate_mappings():
+    mapping = load_mapping()
+    for folder_path, folder_id in mapping["folders"].items():
+        metadata = format_metadata(folder_path, folder_id, True)
+        # write along with the folder as _metadata.json
+        hash = sha256_checksum(folder_path)
+        with open(os.path.join(LOCAL_REPO_PATH, "metadata", f"{hash}_metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
+    for file_path, file_id in mapping["files"].items():
+        # remove extension
+        file_path = os.path.splitext(file_path)[0]
+
+        metadata = format_metadata(file_path, file_id, False)
+        # write along with the folder as _metadata.json
+        hash = sha256_checksum(file_path)
+        with open(os.path.join(LOCAL_REPO_PATH, "metadata", f"{hash}_metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
+
 
 def main():
     # 1. Auth for Drive
@@ -186,4 +218,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    migrate_mappings()

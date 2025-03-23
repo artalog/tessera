@@ -12,10 +12,11 @@ st.set_page_config(layout="wide")
 # CONFIG
 # ------------------------------------------------------------------------------
 # 1. Path to your local "archive" directory containing subfolders and images
-archive_dir = Path("./data/Archivos_Scan_RBML/Archives/")
+ARCHIVE_DIR = Path("./data/Archivos_Scan_RBML/")
+IMAGES_DIR = ARCHIVE_DIR / Path("all_extracted_images")
 
 # 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
-DRIVE_MAP_PATH = archive_dir / Path("./drive_map.json")
+DRIVE_MAP_PATH = ARCHIVE_DIR / Path("./drive_map.json")
 
 
 def load_drive_map(json_path: Path):
@@ -56,9 +57,18 @@ def get_transcription_key(archive: str, page: int) -> str:
     return f"{archive}/page_{page:03d}_img_001.txt"
 
 
-def get_transcription_path(archive: str, page: int) -> Path:
-    return archive_dir / Path(f"{archive}/page_{page:03d}_img_001.txt")
+@st.cache_data
+def get_transcription_path(archive: str, page: int) -> Path | None:
+    # get latest transcription file in folder 
+    # "transcribed/{archive}/page_{page:03d}_img_001/response_{timestamp}.txt"
 
+    # list all files in the folder
+    files = list(ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*.txt"))
+    if not files:
+        return None
+
+    # sort by timestamp and return the latest file
+    return sorted(files)[-1]
 
 
 CSS_OVERRIDE = """
@@ -82,7 +92,7 @@ def main():
     drive_map = load_drive_map(DRIVE_MAP_PATH)
 
     # Discover subdirectories under archive_dir
-    archive_dirs = [x.name for x in archive_dir.iterdir() if x.is_dir()]
+    archive_dirs = sorted([x.name for x in IMAGES_DIR.iterdir() if x.is_dir()])
 
     # UI: Layout with two columns for selectboxes
     col_archive, col_page = st.columns([0.7, 0.3])
@@ -95,7 +105,7 @@ def main():
     # extract page numbers from file names
     page_numbers = [
         int(p.name.split("_")[1])
-        for p in archive_dir.glob(pattern)
+        for p in IMAGES_DIR.glob(pattern)
         if p.is_file()
     ]
     page_numbers.sort()
@@ -111,7 +121,7 @@ def main():
         st.header("Scan")
         try:
             image_path = (
-                archive_dir
+                IMAGES_DIR
                 / selected_archive
                 / f"page_{selected_page:03d}_img_001.jpeg"
             )
@@ -128,6 +138,9 @@ def main():
             case Source.CHAT_GPT:
                 # read the .txt file and display the transcription
                 t_path = get_transcription_path(selected_archive, selected_page)
+                if t_path is None:
+                    st.warning("No transcription found for this page.")
+                    return
                 try:
                     with open(t_path, "r", encoding="utf-8") as f:
                         st.markdown(f.read())
