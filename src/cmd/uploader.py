@@ -13,7 +13,7 @@ from googleapiclient.http import MediaInMemoryUpload
 SERVICE_ACCOUNT_FILE = "credentials.json"
 
 # Path to the local Git repo (root) that we want to scan for .txt files
-LOCAL_REPO_PATH = "./data/Archivos_Scan_RBML/Archives"
+LOCAL_REPO_PATH = "./data/Archivos_Scan_RBML/gdrive"
 
 # JSON file to store ID mappings (checked into your Git repo for history)
 MAPPING_JSON_PATH = os.path.join(LOCAL_REPO_PATH, "drive_map.json")
@@ -155,18 +155,19 @@ def format_metadata(filename: str, transcription_google_drive_doc_id: str, is_di
         "transcription_google_drive_doc_id": transcription_google_drive_doc_id,
     }
 
-import hashlib
 
-def sha256_checksum(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 def migrate_mappings():
     mapping = load_mapping()
     for folder_path, folder_id in mapping["folders"].items():
         metadata = format_metadata(folder_path, folder_id, True)
-        # write along with the folder as _metadata.json
-        hash = sha256_checksum(folder_path)
-        with open(os.path.join(LOCAL_REPO_PATH, "metadata", f"{hash}_metadata.json"), "w", encoding="utf-8") as f:
+        folder_name = os.path.basename(folder_path)
+        # make directory
+        os.makedirs(os.path.join(LOCAL_REPO_PATH, folder_name), exist_ok=True)
+
+        # write metadata at "directory.json"
+        metadata_path = os.path.join(LOCAL_REPO_PATH, folder_name, "directory.json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
 
     for file_path, file_id in mapping["files"].items():
@@ -174,9 +175,11 @@ def migrate_mappings():
         file_path = os.path.splitext(file_path)[0]
 
         metadata = format_metadata(file_path, file_id, False)
-        # write along with the folder as _metadata.json
-        hash = sha256_checksum(file_path)
-        with open(os.path.join(LOCAL_REPO_PATH, "metadata", f"{hash}_metadata.json"), "w", encoding="utf-8") as f:
+
+        # write metadata at {filename}.json
+
+        metadata_path = os.path.join(LOCAL_REPO_PATH, file_path + ".json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
 
 

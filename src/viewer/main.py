@@ -16,14 +16,34 @@ ARCHIVE_DIR = Path("./data/Archivos_Scan_RBML/")
 IMAGES_DIR = ARCHIVE_DIR / Path("all_extracted_images")
 
 # 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
-DRIVE_MAP_PATH = ARCHIVE_DIR / Path("./drive_map.json")
+DRIVE_MAP_PATH = ARCHIVE_DIR / "gdrive"
 
 
-def load_drive_map(json_path: Path):
-    if not json_path.exists():
-        raise FileNotFoundError(f"File not found: {json_path}")
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_drive_map(gdrive_path: Path):
+    # list directories in gdrive_path
+    gdrive_dirs = [x.name for x in gdrive_path.iterdir() if x.is_dir()]
+
+    # for each directory, read every json file in format
+    #   {
+    #     "filename": "Folder 764/page_001_img_001",
+    #     "is_directory": false,
+    #     "transcription_google_drive_doc_id": "1lnjF4PkFfg1ofI2whK-iCXAenxWSgZdAGN4RPBwLp3A"
+    #   }
+
+    drive_map = {"files": {}}
+    for gdrive_dir in gdrive_dirs:
+        for json_file in gdrive_path.glob(f"{gdrive_dir}/*.json"):
+            with open(json_file, "r") as f:
+                data = json.load(f)
+                if data["is_directory"]:
+                    continue
+
+
+                key = data["filename"]
+                doc_id = data["transcription_google_drive_doc_id"]
+                drive_map["files"][key] = doc_id
+
+    return drive_map
 
 
 def get_credentials():
@@ -54,7 +74,7 @@ def get_gdoc_html(doc_id: str) -> str:
 
 
 def get_transcription_key(archive: str, page: int) -> str:
-    return f"{archive}/page_{page:03d}_img_001.txt"
+    return f"{archive}/page_{page:03d}_img_001"
 
 
 @st.cache_data
@@ -151,7 +171,7 @@ def main():
                 # Adjust if your drive_map keys differ.
                 map_key = get_transcription_key(selected_archive, selected_page)
                 if map_key not in drive_map["files"]:
-                    st.warning("No Google Doc mapping found for this page.")
+                    st.warning(f"No Google Doc mapping found for page {map_key=}.")
                 else:
                     doc_id = drive_map["files"][map_key]
 
