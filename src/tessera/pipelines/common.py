@@ -18,7 +18,7 @@ class PhotoTranscription:
     image_path: str
 
     @staticmethod
-    def from_jpg_path(image_path):
+    def from_jpg_path(image_path: str):
         if not image_path.endswith(".jpeg") and not image_path.endswith(".jpg"):
             raise ValueError("Photo must be in JPEG format")
         return PhotoTranscription(image_path)

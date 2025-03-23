@@ -6,6 +6,8 @@ import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+from tessera.pipelines.common import PhotoTranscription
+
 st.set_page_config(layout="wide")
 
 # ------------------------------------------------------------------------------
@@ -17,6 +19,22 @@ IMAGES_DIR = ARCHIVE_DIR / Path("all_extracted_images")
 
 # 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
 DRIVE_MAP_PATH = ARCHIVE_DIR / "gdrive"
+
+
+qs = st.query_params.to_dict()  # gets a dict of query parameters
+if "archive" not in st.session_state:
+    st.session_state.archive = qs.get("archive", "Folder 764")
+
+if "page" not in st.session_state:
+    st.session_state.page = int(qs.get("page", 1))
+
+def update_archive_qs():
+    st.query_params.archive = st.session_state.archive
+    st.query_params.page = 1
+
+
+def update_page_qs():
+    st.query_params.page = st.session_state.page
 
 
 def load_drive_map(gdrive_path: Path):
@@ -80,10 +98,10 @@ def get_transcription_key(archive: str, page: int) -> str:
 @st.cache_data
 def get_transcription_path(archive: str, page: int) -> Path | None:
     # get latest transcription file in folder 
-    # "transcribed/{archive}/page_{page:03d}_img_001/response_{timestamp}.txt"
+    # "transcribed/{archive}/page_{page:03d}_img_001/response_{timestamp}.txt" or json
 
     # list all files in the folder
-    files = list(ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*.txt"))
+    files = list(ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*"))
     if not files:
         return None
 
@@ -107,6 +125,10 @@ class Source(StrEnum):
     CHAT_GPT = "Chat GPT"
 
 
+def _get_image_path(archive: str, page: int) -> Path:
+    return IMAGES_DIR / archive / f"page_{page:03d}_img_001.jpeg"
+
+
 def main():
     # Load the mapping of local .txt -> Google Doc IDs
     drive_map = load_drive_map(DRIVE_MAP_PATH)
@@ -118,7 +140,7 @@ def main():
     col_archive, col_page = st.columns([0.7, 0.3])
 
     # Select a "archive"
-    selected_archive = col_archive.selectbox("Select an archive", archive_dirs)
+    selected_archive = col_archive.selectbox("Select an archive", archive_dirs, key="archive", on_change=update_archive_qs)
 
     # Count the pages by scanning .jpeg files
     pattern = f"{selected_archive}/page_*.jpeg"
@@ -131,7 +153,7 @@ def main():
     page_numbers.sort()
 
     # Select the page
-    selected_page = col_page.selectbox("Select a page", page_numbers)
+    selected_page = col_page.selectbox("Select a page", page_numbers, key="page", on_change=update_page_qs)
 
     # Prepare columns for Scan (image) and Transcription (text)
     col1, col2 = st.columns(2)
@@ -140,11 +162,7 @@ def main():
     with col1:
         st.header("Scan")
         try:
-            image_path = (
-                IMAGES_DIR
-                / selected_archive
-                / f"page_{selected_page:03d}_img_001.jpeg"
-            )
+            image_path = _get_image_path(selected_archive, selected_page)
             st.image(str(image_path))
         except Exception:
             st.warning("No image found")
@@ -157,15 +175,12 @@ def main():
         match t_source:
             case Source.CHAT_GPT:
                 # read the .txt file and display the transcription
-                t_path = get_transcription_path(selected_archive, selected_page)
-                if t_path is None:
+                image = PhotoTranscription.from_jpg_path(str(image_path))
+                if not image.has_transcription:
                     st.warning("No transcription found for this page.")
                     return
-                try:
-                    with open(t_path, "r", encoding="utf-8") as f:
-                        st.markdown(f.read())
-                except FileNotFoundError:   
-                    st.warning("No transcription found for this page.")
+
+                st.markdown(image.transcription)
             case Source.GOOGLE_DOCS:
                 # Build the local .txt path key as stored in drive_map.json
                 # Adjust if your drive_map keys differ.

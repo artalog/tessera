@@ -31,19 +31,21 @@ extracted_images = results['all_extracted_images']
 
 common_directories = []
 for key, image_paths in extracted_images.items():
-    common_directories.append(os.path.commonpath(image_paths))
+    if len(image_paths) > 1:
+        common_directories.append(os.path.commonpath(image_paths))
+    else:
+        common_directories.append(os.path.dirname(image_paths[0]))
+
 
 
 annotation_path = directory + '/annotated/Folder 762'
 
-
-results = d.execute(['all_transcribed_archives'], inputs={
-    'archive_paths': common_directories,
-    'annotation_path': annotation_path
-})
-
-
-
-results = d.execute(['upload_gdrive'], inputs={
-    'image_folders': common_directories,
-})
+for common_directory in common_directories:
+    results = d.execute(['all_transcribed_archives'], inputs={
+        'archive_paths': [common_directory],
+        'annotation_path': annotation_path
+    })
+    
+    results = d.execute(['upload_gdrive'], inputs={
+        'image_folders': [common_directory],
+    })
