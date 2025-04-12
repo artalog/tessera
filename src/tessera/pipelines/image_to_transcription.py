@@ -21,7 +21,6 @@ logging.basicConfig(
 )
 
 
-
 def _images_to_messages(base64_images, max_images_per_message=4):
     return [
         {
@@ -41,9 +40,6 @@ def _images_to_messages(base64_images, max_images_per_message=4):
     ]
 
 
-client = OpenAI()
-
-
 def _resize_image(image_bytes, max_size=1024):
     with Image.open(BytesIO(image_bytes)) as img:
         img.thumbnail((max_size, max_size), Image.LANCZOS)
@@ -55,7 +51,6 @@ def _resize_image(image_bytes, max_size=1024):
             f.write(output_buffer.getvalue())
 
         return output_buffer.getvalue()
-
 
 
 def _make_system_messages(images):
@@ -85,7 +80,7 @@ The user will provide the best human-transcribed pages of documents from the sam
 
 
 def _request(messages):
-    log.info(len(json.dumps(messages)))
+    client = OpenAI()
     return client.chat.completions.create(
         model="gpt-4.5-preview",
         max_completion_tokens=16383,
@@ -104,7 +99,9 @@ def _transcribe_images(system_images, user_images):
     for image in user_images:
         user_messages.append(image.user_message)
         if image.has_transcription:
-            log.info(f"Skipping image: {image.image_path} because it has been transcribed")
+            log.info(
+                f"Skipping image: {image.image_path} because it has been transcribed"
+            )
             user_messages.append(image.assistant_message)
         else:
             last_image = image
