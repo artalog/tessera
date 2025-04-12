@@ -2,6 +2,8 @@ from enum import StrEnum
 import json
 from pathlib import Path
 
+import pandas as pd
+
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -23,10 +25,11 @@ DRIVE_MAP_PATH = ARCHIVE_DIR / "gdrive"
 
 qs = st.query_params.to_dict()  # gets a dict of query parameters
 if "archive" not in st.session_state:
-    st.session_state.archive = qs.get("archive", "Folder 764")
+    st.session_state.archive = int(qs.get("archive", 764))
 
 if "page" not in st.session_state:
     st.session_state.page = int(qs.get("page", 1))
+
 
 def update_archive_qs():
     st.query_params.archive = st.session_state.archive
@@ -37,7 +40,8 @@ def update_page_qs():
     st.query_params.page = st.session_state.page
 
 
-def load_drive_map(gdrive_path: Path):
+@st.cache_resource
+def load_drive_map(gdrive_path: Path) -> dict:
     # list directories in gdrive_path
     gdrive_dirs = [x.name for x in gdrive_path.iterdir() if x.is_dir()]
 
@@ -56,7 +60,6 @@ def load_drive_map(gdrive_path: Path):
                 if data["is_directory"]:
                     continue
 
-
                 key = data["filename"]
                 doc_id = data["transcription_google_drive_doc_id"]
                 drive_map["files"][key] = doc_id
@@ -64,6 +67,7 @@ def load_drive_map(gdrive_path: Path):
     return drive_map
 
 
+@st.cache_resource
 def get_credentials():
     """Load service account info from Streamlit secrets and create credentials."""
     service_account_info = st.secrets["service_account"]
@@ -71,6 +75,25 @@ def get_credentials():
         service_account_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
     return creds
+
+
+@st.cache_resource
+def get_archive_index(path: str) -> pd.DataFrame:
+    df = pd.read_json(path, lines=True, dtype=object)
+    return df
+
+
+@st.cache_resource
+def get_archives() -> pd.DataFrame:
+    archive_dirs = sorted([x.name for x in IMAGES_DIR.iterdir() if x.is_dir()])
+
+    # Convert to dataframe
+    archive_dirs_df = pd.DataFrame(archive_dirs, columns=["archive"])
+    # Add "document_number" column by parsing "Folder 764" to "764" integer
+    archive_dirs_df["document_number"] = (
+        archive_dirs_df["archive"].str.extract(r"(\d+)").astype(int)
+    )
+    return archive_dirs_df
 
 
 def get_gdoc_html(doc_id: str) -> str:
@@ -97,11 +120,13 @@ def get_transcription_key(archive: str, page: int) -> str:
 
 @st.cache_data
 def get_transcription_path(archive: str, page: int) -> Path | None:
-    # get latest transcription file in folder 
+    # get latest transcription file in folder
     # "transcribed/{archive}/page_{page:03d}_img_001/response_{timestamp}.txt" or json
 
     # list all files in the folder
-    files = list(ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*"))
+    files = list(
+        ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*")
+    )
     if not files:
         return None
 
@@ -113,9 +138,9 @@ CSS_OVERRIDE = """
 <style>
 /* Target the main Streamlit Markdown container */
 div[data-testid="stMarkdownContainer"] * {
-    color: inherit !important;
-    background-color: inherit !important;
-}
+        color: inherit !important;
+        background-color: inherit !important;
+        }
 </style>
 """
 
@@ -133,27 +158,58 @@ def main():
     # Load the mapping of local .txt -> Google Doc IDs
     drive_map = load_drive_map(DRIVE_MAP_PATH)
 
-    # Discover subdirectories under archive_dir
-    archive_dirs = sorted([x.name for x in IMAGES_DIR.iterdir() if x.is_dir()])
+    archives = get_archives()
+    archive_index = get_archive_index(ARCHIVE_DIR / "archive_index/index.json")
+    # merge on "document_number"
+    archives = pd.merge(archives, archive_index, on="document_number", how="left")
 
     # UI: Layout with two columns for selectboxes
     col_archive, col_page = st.columns([0.7, 0.3])
 
+    documents = archives["document_number"].tolist()
+
+    def _archive_selectbox_format_func(document_number: int) -> str:
+        # Format the archive name with its description
+        archive_info = archives[archives["document_number"] == document_number].iloc[0]
+        return f"{archive_info['document_number']} - {archive_info['description']}"
+
     # Select a "archive"
-    selected_archive = col_archive.selectbox("Select an archive", archive_dirs, key="archive", on_change=update_archive_qs)
+    selected_archive = col_archive.selectbox(
+        "Select an archive",
+        documents,
+        key="archive",
+        on_change=update_archive_qs,
+        format_func=_archive_selectbox_format_func,
+    )
+
+    archive_info = archives[archives["document_number"] == selected_archive].iloc[0]
+    selected_archive = archive_info["archive"]
 
     # Count the pages by scanning .jpeg files
     pattern = f"{selected_archive}/page_*.jpeg"
     # extract page numbers from file names
     page_numbers = [
-        int(p.name.split("_")[1])
-        for p in IMAGES_DIR.glob(pattern)
-        if p.is_file()
+        int(p.name.split("_")[1]) for p in IMAGES_DIR.glob(pattern) if p.is_file()
     ]
-    page_numbers.sort()
+    # enumerate page numbers from first to max
+    page_numbers = list(range(1, max(page_numbers) + 1))
 
     # Select the page
-    selected_page = col_page.selectbox("Select a page", page_numbers, key="page", on_change=update_page_qs)
+    selected_page = col_page.selectbox(
+        "Select a page", page_numbers, key="page", on_change=update_page_qs
+    )
+
+    cols = {
+        "document_number": "Document Number",
+        "year": "Year",
+        "author": "Author",
+        "description": "Description",
+        "pages": "Original Pages",
+    }
+
+    # make markdown print out Value -> Key
+    markdown = "\n".join(f"- **{v}**: {archive_info[k]}" for k, v in cols.items())
+    st.markdown(markdown)
 
     # Prepare columns for Scan (image) and Transcription (text)
     col1, col2 = st.columns(2)
@@ -186,7 +242,7 @@ def main():
                 # Adjust if your drive_map keys differ.
                 map_key = get_transcription_key(selected_archive, selected_page)
                 if map_key not in drive_map["files"]:
-                    st.warning(f"No Google Doc mapping found for page {map_key=}.")
+                    st.warning(f"No Google Doc found for page {selected_page}.")
                 else:
                     doc_id = drive_map["files"][map_key]
 
