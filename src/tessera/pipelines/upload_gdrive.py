@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import json
 import logging
@@ -23,10 +24,19 @@ DRIVE_PARENT_FOLDER_ID = "1eHiqnzJHjiB65_Vaz9CgmvYH_oyatwmC"
 
 log = logging.getLogger(__name__)
 
-creds = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=["https://www.googleapis.com/auth/drive"]
-)
-drive_service = build("drive", "v3", credentials=creds)
+_drive_service = None
+
+
+def get_drive_service() -> Any:
+    global _drive_service
+    if _drive_service:
+        return _drive_service
+
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    _drive_service = build("drive", "v3", credentials=creds)
+    return _drive_service
 
 
 def create_folder(local_folder_path: str) -> dict:
@@ -42,7 +52,6 @@ def create_folder(local_folder_path: str) -> dict:
     # If there's a parent folder in the local structure, find its Drive ID for nesting
     parent_id = DRIVE_PARENT_FOLDER_ID
 
-
     # Create the folder in Drive
     folder_metadata = {
         "name": folder_name,
@@ -51,14 +60,16 @@ def create_folder(local_folder_path: str) -> dict:
     if parent_id:
         folder_metadata["parents"] = [parent_id]
 
-    folder = drive_service.files().create(body=folder_metadata, fields="id").execute()
+    folder = (
+        get_drive_service.files().create(body=folder_metadata, fields="id").execute()
+    )
     folder_id = folder["id"]
 
     metadata = format_metadata(folder_name, folder_id, is_directory=True)
 
     # create directory metadata file
     os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
-    
+
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
@@ -77,6 +88,7 @@ def get_parent_folder_metadata(local_file_path: str) -> dict | None:
             return metadata
 
     return None
+
 
 def create_doc(local_file_path: str, text_content: str) -> dict:
     doc_name = os.path.splitext(os.path.basename(local_file_path))[0]
@@ -101,7 +113,6 @@ def create_doc(local_file_path: str, text_content: str) -> dict:
         "parents": [folder_metadata["transcription_google_drive_doc_id"]],
     }
 
-
     # The media body is our plain text
     media_body = MediaInMemoryUpload(
         text_content.encode("utf-8"), mimetype="text/plain", resumable=False
@@ -109,7 +120,7 @@ def create_doc(local_file_path: str, text_content: str) -> dict:
 
     # Create the file
     new_file = (
-        drive_service.files()
+        get_drive_service.files()
         .create(body=file_metadata, media_body=media_body, fields="id")
         .execute()
     )
@@ -125,13 +136,14 @@ def create_doc(local_file_path: str, text_content: str) -> dict:
     return metadata
 
 
-def format_metadata(filename: str, transcription_google_drive_doc_id: str, is_directory: bool) -> dict:
+def format_metadata(
+    filename: str, transcription_google_drive_doc_id: str, is_directory: bool
+) -> dict:
     return {
         "filename": filename,
         "is_directory": is_directory,
         "transcription_google_drive_doc_id": transcription_google_drive_doc_id,
     }
-
 
 
 def upload_gdrive(image_folders: list[str]) -> list[dict]:
@@ -141,7 +153,6 @@ def upload_gdrive(image_folders: list[str]) -> list[dict]:
         # check if directory metadta file exists at archive path
         out = create_folder(image_folder)
         output.append(out)
-
 
         # load images from archive path
         images = load_images(image_folder)
