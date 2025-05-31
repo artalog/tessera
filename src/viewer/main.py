@@ -72,7 +72,7 @@ def load_drive_map(gdrive_path: Path) -> dict:
 def get_credentials():
     """Load service account info from Streamlit secrets and create credentials."""
     service_account_info_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT")
-    if not service_account_info:
+    if not service_account_info_json:
         raise ValueError("GOOGLE_SERVICE_ACCOUNT environment variable not set.")
 
     service_account_info = json.loads(service_account_info_json)
