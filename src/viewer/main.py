@@ -71,9 +71,11 @@ def load_drive_map(gdrive_path: Path) -> dict:
 @st.cache_resource
 def get_credentials():
     """Load service account info from Streamlit secrets and create credentials."""
-    service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT")
+    service_account_info_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT")
     if not service_account_info:
         raise ValueError("GOOGLE_SERVICE_ACCOUNT environment variable not set.")
+
+    service_account_info = json.loads(service_account_info_json)
     creds = service_account.Credentials.from_service_account_info(
         service_account_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
