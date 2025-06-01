@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 import os
 import io
@@ -8,20 +7,25 @@ import toml
 import boto3
 
 
-def read_toml(path: str = ".streamlit/secrets.toml") -> dict:
+def read_toml(path: str) -> dict:
     with open(path, "r") as f:
         return toml.load(f)
 
 
 # dict to env
-def set_env_from_toml(toml_path: str = ".streamlit/secrets.toml") -> None:
+def set_env(toml_path: str = ".streamlit/secrets.toml") -> None:
     os.environ["AWS_REQUEST_CHECKSUM_CALCULATION"] = "when_required"
     os.environ["AWS_RESPONSE_CHECKSUM_VALIDATION"] = "when_required"
-    secrets = read_toml(toml_path)
+    secrets = {}
+    try:
+        secrets = read_toml(toml_path)
+    except Exception as e:
+        pass
+        
     for key, value in secrets.items():
         os.environ[key.upper()] = str(value)
 
-set_env_from_toml()
+set_env()
 
 STORAGE_OPTIONS = {
     "key": os.environ["OCI_ACCESS_KEY"],
