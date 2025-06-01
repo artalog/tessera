@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "boto3>=1.38.27",
     "google-api-python-client>=2.161.0",
     "google-auth>=2.38.0",
     "openai>=1.63.0",
@@ -13,6 +14,7 @@ dependencies = [
     "pdfplumber>=0.11.5",
     "pillow>=11.1.0",
     "pymupdf>=1.25.3",
+    "s3fs>=0.4.2",
     "sf-hamilton[sdk,ui]>=1.87.0",
     "streamlit>=1.42.0",
 ]

@@ -1,16 +1,10 @@
-from datetime import datetime
-from dataclasses import dataclass
-import json
-import os
-import sys
-import base64
 import logging
 from PIL import Image
 from openai import OpenAI
 from io import BytesIO
 
 
-from tessera.pipelines.common import PhotoTranscription, load_images, image_to_content
+from tessera.pipelines.common import load_images, image_to_content
 
 
 log = logging.getLogger(__name__)
@@ -127,7 +121,8 @@ def transcribe_archive(annotation_path: str, archive_path: str) -> None:
     while True:
         try:
             response, image = _transcribe_images(system_images, user_images)
-        except ValueError as e:
+        except ValueError:
+            log.info("All images have been transcribed.")
             return
 
         json_response = response.model_dump_json()

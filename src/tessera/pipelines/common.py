@@ -1,35 +1,34 @@
 from dataclasses import dataclass
 import base64
 import os
+import io
 import json
 from datetime import datetime
 import logging
 
+from tessera.lake_client.files import Asset as FileAsset
 
 log = logging.getLogger(__name__)
 
 
+transcribed_asset = FileAsset("Archivos_Scan_RBML/transcribed")
+annotated_asset = FileAsset("Archivos_Scan_RBML/annotated")
+images_asset = FileAsset("Archivos_Scan_RBML/all_extracted_images")
 
 def _encode_image(image_bytes):
     return base64.b64encode(image_bytes).decode("utf-8")
 
 @dataclass(frozen=True)
 class PhotoTranscription:
-    image_path: str
-
-    @staticmethod
-    def from_jpg_path(image_path: str):
-        if not image_path.endswith(".jpeg") and not image_path.endswith(".jpg"):
-            raise ValueError("Photo must be in JPEG format")
-        return PhotoTranscription(image_path)
+    archive: str
+    page: int
 
     @property
     def image_base64(self):
-        with open(self.image_path, "rb") as f:
-            log.info(f"Reading image: {self.image_path}")
-            image_bytes = f.read()
-            # image_bytes = _resize_image(image_bytes)
-            image_base64 = _encode_image(image_bytes)
+        log.info(f"Reading image: {self.image_path}")
+        image_bytes = images_asset.read(self.image_path).getvalue()
+        # image_bytes = _resize_image(image_bytes)
+        image_base64 = _encode_image(image_bytes)
 
         return image_base64
 
@@ -38,75 +37,70 @@ class PhotoTranscription:
         # Check if there's a response file
 
         p = self._last_response_path
-        return p is not None and os.path.exists(p)
+        return p is not None
 
     @property
     def has_annotation(self):
-        return os.path.exists(self._annotation_path)
+        return annotated_asset.exists(self._annotation_path)
+
 
     @property
-    def transcription(self):
+    def transcription(self) -> str | None:
         t = None
         if self.has_transcription:
             log.info(f"Reading response: {self._last_response_path}")
 
             if self._last_response_path.endswith(".txt"):
-                with open(self._last_response_path, "r") as f:
-                    t = f.read()
+                t = io.TextIOWrapper(transcribed_asset.read(self._last_response_path)).read()
             elif self._last_response_path.endswith(".json"):
-                # read json file
-                with open(self._last_response_path, "r") as f:
-                    response = json.load(f)
-                    t = response["choices"][0]["message"]["content"]
+                response = json.load(transcribed_asset.read(self._last_response_path))
+                t = response["choices"][0]["message"]["content"]
             else:
                 raise ValueError("Unknown file type for transcription")
         return t
 
     @property
-    def annotation(self):
+    def image_path(self) -> str:
+        return os.path.join(self.archive, f"page_{self.page:03d}_img_001")
+
+
+    @property
+    def annotation(self) -> str | None:
         t = None
         if self.has_annotation:
             log.info(f"Reading annotation: {self._annotation_path}")
-            with open(self._annotation_path, "r") as f:
-                t = f.read()
+            t = io.TextIOWrapper(annotated_asset.read(self._annotation_path)).read()
         return t
 
     @property
     def _annotation_path(self):
         image_name, _ = os.path.splitext(self.image_path)
-        image_name = image_name.replace("all_extracted_images", "annotated")
         return image_name + ".txt"
 
 
     @property
-    def _last_response_path(self):
-        image_name, _ = os.path.splitext(self.image_path)
-        p = image_name.replace("all_extracted_images", "transcribed")
+    def _last_response_path(self) -> str | None:
+        p = self.image_path
 
-        if not os.path.exists(p):
-            return None
+        responses = transcribed_asset.list_dir(p)
+        responses = [f for f in responses if f.startswith("response_")]
 
-        # list all .json paths in the directory sorted
-        json_files = [f for f in os.listdir(p) if f.endswith(".json") or f.endswith(".txt")]
-        if not json_files:
+        if len(responses) == 0:
             return None
 
         # sort by timestamp in name
-        json_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+        responses.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
 
-        return os.path.join(p, json_files[-1])
+        return os.path.join(p, responses[-1])
 
 
     def save_response(self, response):
         image_name, _ = os.path.splitext(self.image_path)
-        image_name = image_name.replace("all_extracted_images", "transcribed")
         current_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         response_path = image_name + "/response_" + current_timestamp + ".json"
 
-        os.makedirs(os.path.dirname(response_path), exist_ok=True)
+        transcribed_asset.write(response_path, response)
 
-        with open(response_path, "w") as f:
-            f.write(response)
 
     @property
     def assistant_message(self):

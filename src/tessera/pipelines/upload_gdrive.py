@@ -7,7 +7,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaInMemoryUpload
 
-from tessera.pipelines.common import PhotoTranscription, load_images
+from tessera.pipelines.common import load_images
 
 # ------------------------------
 # CONFIGURATION
@@ -79,7 +79,6 @@ def create_folder(local_folder_path: str) -> dict:
 # get parent folder metadata from current path from directory.json
 def get_parent_folder_metadata(local_file_path: str) -> dict | None:
     parent_folder_path = os.path.dirname(local_file_path)
-    parent_folder_name = os.path.basename(parent_folder_path)
     parent_metadata_path = os.path.join(parent_folder_path, "directory.json")
 
     if os.path.exists(parent_metadata_path):

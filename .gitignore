@@ -1,5 +1,5 @@
-.streamlit
 .DS_Store
 credentials.json
 __pycache__/
 *.pyc
+.streamlit/secrets.toml

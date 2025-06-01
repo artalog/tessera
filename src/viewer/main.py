@@ -4,24 +4,18 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import logging
 
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 from tessera.pipelines.common import PhotoTranscription
+from tessera.lake_client.files import Asset as FileAsset, STORAGE_OPTIONS
 
+
+log = logging.getLogger(__name__)
 st.set_page_config(layout="wide")
-
-# ------------------------------------------------------------------------------
-# CONFIG
-# ------------------------------------------------------------------------------
-# 1. Path to your local "archive" directory containing subfolders and images
-ARCHIVE_DIR = Path("./data/Archivos_Scan_RBML/")
-IMAGES_DIR = ARCHIVE_DIR / Path("all_extracted_images")
-
-# 2. Path to your drive_map.json (which maps .txt paths to Google Doc IDs)
-DRIVE_MAP_PATH = ARCHIVE_DIR / "gdrive"
 
 
 qs = st.query_params.to_dict()  # gets a dict of query parameters
@@ -40,34 +34,6 @@ def update_archive_qs():
 def update_page_qs():
     st.query_params.page = st.session_state.page
 
-
-@st.cache_resource
-def load_drive_map(gdrive_path: Path) -> dict:
-    # list directories in gdrive_path
-    gdrive_dirs = [x.name for x in gdrive_path.iterdir() if x.is_dir()]
-
-    # for each directory, read every json file in format
-    #   {
-    #     "filename": "Folder 764/page_001_img_001",
-    #     "is_directory": false,
-    #     "transcription_google_drive_doc_id": "1lnjF4PkFfg1ofI2whK-iCXAenxWSgZdAGN4RPBwLp3A"
-    #   }
-
-    drive_map = {"files": {}}
-    for gdrive_dir in gdrive_dirs:
-        for json_file in gdrive_path.glob(f"{gdrive_dir}/*.json"):
-            with open(json_file, "r") as f:
-                data = json.load(f)
-                if data["is_directory"]:
-                    continue
-
-                key = data["filename"]
-                doc_id = data["transcription_google_drive_doc_id"]
-                drive_map["files"][key] = doc_id
-
-    return drive_map
-
-
 @st.cache_resource
 def get_credentials():
     """Load service account info from Streamlit secrets and create credentials."""
@@ -81,16 +47,20 @@ def get_credentials():
     )
     return creds
 
+archive_index_asset = FileAsset("Archivos_Scan_RBML/archive_index")
+images_asset = FileAsset("Archivos_Scan_RBML/all_extracted_images")
+gdrive_asset = FileAsset("Archivos_Scan_RBML/gdrive")
 
 @st.cache_resource
-def get_archive_index(path: str) -> pd.DataFrame:
-    df = pd.read_json(path, lines=True, dtype=object)
+def get_archive_index() -> pd.DataFrame:
+    df = pd.read_json(archive_index_asset.abs_path("index.json"), lines=True, dtype=object, storage_options=STORAGE_OPTIONS)
     return df
 
 
 @st.cache_resource
 def get_archives() -> pd.DataFrame:
-    archive_dirs = sorted([x.name for x in IMAGES_DIR.iterdir() if x.is_dir()])
+    archive_dirs = images_asset.list_dir()
+    archive_dirs = [x.rstrip("/") for x in archive_dirs if x.endswith("/")]
 
     # Convert to dataframe
     archive_dirs_df = pd.DataFrame(archive_dirs, columns=["archive"])
@@ -123,22 +93,6 @@ def get_transcription_key(archive: str, page: int) -> str:
     return f"{archive}/page_{page:03d}_img_001"
 
 
-@st.cache_data
-def get_transcription_path(archive: str, page: int) -> Path | None:
-    # get latest transcription file in folder
-    # "transcribed/{archive}/page_{page:03d}_img_001/response_{timestamp}.txt" or json
-
-    # list all files in the folder
-    files = list(
-        ARCHIVE_DIR.glob(f"transcribed/{archive}/page_{page:03d}_img_001/response_*")
-    )
-    if not files:
-        return None
-
-    # sort by timestamp and return the latest file
-    return sorted(files)[-1]
-
-
 CSS_OVERRIDE = """
 <style>
 /* Target the main Streamlit Markdown container */
@@ -156,15 +110,30 @@ class Source(StrEnum):
 
 
 def _get_image_path(archive: str, page: int) -> Path:
-    return IMAGES_DIR / archive / f"page_{page:03d}_img_001.jpeg"
+    return f"{archive}/page_{page:03d}_img_001.jpeg"
+
+
+@st.cache_data
+def get_page_numbers(archive: str) -> list[int]:
+    page_files = images_asset.list_dir(archive)
+    # Filter for files that match the pattern "page_*.jpeg"
+    page_files = [f for f in page_files if f.startswith("page_") and f.endswith(".jpeg")]
+    # Extract page numbers from file names
+    page_numbers = [int(f.split("_")[1]) for f in page_files]
+    page_numbers = list(range(1, max(page_numbers) + 1))
+    return page_numbers
+
+@st.cache_data
+def get_google_doc_id(archive: str, page: int) -> str | None:
+    map_key = get_transcription_key(archive, page)
+    doc_meta = json.load(gdrive_asset.read(map_key + ".json"))
+    return doc_meta.get("transcription_google_drive_doc_id")
 
 
 def main():
     # Load the mapping of local .txt -> Google Doc IDs
-    drive_map = load_drive_map(DRIVE_MAP_PATH)
-
     archives = get_archives()
-    archive_index = get_archive_index(ARCHIVE_DIR / "archive_index/index.json")
+    archive_index = get_archive_index()
     # merge on "document_number"
     archives = pd.merge(archives, archive_index, on="document_number", how="left")
 
@@ -190,14 +159,7 @@ def main():
     archive_info = archives[archives["document_number"] == selected_archive].iloc[0]
     selected_archive = archive_info["archive"]
 
-    # Count the pages by scanning .jpeg files
-    pattern = f"{selected_archive}/page_*.jpeg"
-    # extract page numbers from file names
-    page_numbers = [
-        int(p.name.split("_")[1]) for p in IMAGES_DIR.glob(pattern) if p.is_file()
-    ]
-    # enumerate page numbers from first to max
-    page_numbers = list(range(1, max(page_numbers) + 1))
+    page_numbers = get_page_numbers(selected_archive)
 
     # Select the page
     selected_page = col_page.selectbox(
@@ -223,9 +185,9 @@ def main():
     with col1:
         st.header("Scan")
         try:
-            image_path = _get_image_path(selected_archive, selected_page)
-            st.image(str(image_path))
+            st.image(images_asset.read(_get_image_path(selected_archive, selected_page)))
         except Exception:
+            log.exception("Error loading image")
             st.warning("No image found")
 
     # Right column: Display the transcription from Google Docs
@@ -236,20 +198,18 @@ def main():
         match t_source:
             case Source.CHAT_GPT:
                 # read the .txt file and display the transcription
-                image = PhotoTranscription.from_jpg_path(str(image_path))
+                image = PhotoTranscription(archive=selected_archive, page=selected_page)
                 if not image.has_transcription:
                     st.warning("No transcription found for this page.")
                     return
 
                 st.markdown(image.transcription)
             case Source.GOOGLE_DOCS:
-                # Build the local .txt path key as stored in drive_map.json
-                # Adjust if your drive_map keys differ.
-                map_key = get_transcription_key(selected_archive, selected_page)
-                if map_key not in drive_map["files"]:
-                    st.warning(f"No Google Doc found for page {selected_page}.")
-                else:
-                    doc_id = drive_map["files"][map_key]
+
+                try:
+                    doc_id = get_google_doc_id(selected_archive, selected_page)
+                    if not doc_id:
+                        raise RuntimeError("No Google Doc ID found for this page.")
 
                     # A small horizontal layout for Refresh & Edit
                     refresh_col, edit_col = st.columns([0.15, 0.85])
@@ -280,6 +240,12 @@ def main():
 
                         # Finally, display the doc text
                         st.markdown(st.session_state[doc_key], unsafe_allow_html=True)
+
+
+                except Exception:
+                    log.exception("Error loading transcription metadata")
+                    st.warning(f"No Google Doc found for page {selected_page}.")
+
 
 
 if __name__ == "__main__":

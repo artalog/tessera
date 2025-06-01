@@ -1,5 +1,4 @@
 import os
-import sys
 from tessera.pipelines import (
     pdf_to_images,
     image_to_transcription,
@@ -7,7 +6,6 @@ from tessera.pipelines import (
     archive_index_to_json,
 )
 from hamilton import driver
-from hamilton_sdk import adapters
 
 directory = (
     os.path.dirname(os.path.realpath(__file__)) + "/../../data/Archivos_Scan_RBML"
