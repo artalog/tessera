@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 import base64
+from PIL import Image
 import os
 import io
 import json
 from datetime import datetime
 import logging
+
 
 from tessera.lake_client.files import Asset as FileAsset
 
@@ -15,19 +17,28 @@ transcribed_asset = FileAsset("Archivos_Scan_RBML/transcribed")
 annotated_asset = FileAsset("Archivos_Scan_RBML/annotated")
 images_asset = FileAsset("Archivos_Scan_RBML/all_extracted_images")
 
-def _encode_image(image_bytes):
-    return base64.b64encode(image_bytes).decode("utf-8")
+def _encode_image(image_bytes: io.BytesIO) -> str:
+    return base64.b64encode(image_bytes.getvalue()).decode("utf-8")
 
-@dataclass(frozen=True)
+
+def _resize_image(image_bytes: io.BytesIO, max_size: int = 1800) -> io.BytesIO:
+    with Image.open(image_bytes) as img:
+        img.thumbnail((max_size,max_size), Image.LANCZOS)
+
+        output_buffer = io.BytesIO()
+        img.save(output_buffer, format="JPEG")
+        return output_buffer
+
+@dataclass
 class PhotoTranscription:
     archive: str
     page: int
 
     @property
     def image_base64(self):
-        log.info(f"Reading image: {self.image_path}")
-        image_bytes = images_asset.read(self.image_path).getvalue()
-        # image_bytes = _resize_image(image_bytes)
+        image_path = self.image_path + ".jpeg"
+        image_bytes = images_asset.read(image_path)
+        image_bytes = _resize_image(image_bytes)
         image_base64 = _encode_image(image_bytes)
 
         return image_base64
@@ -35,9 +46,10 @@ class PhotoTranscription:
     @property
     def has_transcription(self):
         # Check if there's a response file
-
         p = self._last_response_path
+
         return p is not None
+
 
     @property
     def has_annotation(self):
@@ -48,13 +60,16 @@ class PhotoTranscription:
     def transcription(self) -> str | None:
         t = None
         if self.has_transcription:
-            log.info(f"Reading response: {self._last_response_path}")
+            p = self._last_response_path
 
-            if self._last_response_path.endswith(".txt"):
-                t = io.TextIOWrapper(transcribed_asset.read(self._last_response_path)).read()
-            elif self._last_response_path.endswith(".json"):
-                response = json.load(transcribed_asset.read(self._last_response_path))
-                t = response["choices"][0]["message"]["content"]
+            if p.endswith(".txt"):
+                t = io.TextIOWrapper(transcribed_asset.read(p)).read()
+            elif p.endswith(".json"):
+                response = json.load(transcribed_asset.read(p))
+                if "choices" in response:
+                    t = response["choices"][0]["message"]["content"]
+                if "output" in response:
+                    t = response["output"][0]["content"][0]["text"]
             else:
                 raise ValueError("Unknown file type for transcription")
         return t
@@ -94,12 +109,13 @@ class PhotoTranscription:
         return os.path.join(p, responses[-1])
 
 
-    def save_response(self, response):
+    def save_response(self, response) -> str:
         image_name, _ = os.path.splitext(self.image_path)
         current_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         response_path = image_name + "/response_" + current_timestamp + ".json"
 
-        transcribed_asset.write(response_path, response)
+        transcribed_asset.write(response_path, io.BytesIO(response.encode("utf-8")))
+        return response_path
 
 
     @property
@@ -108,7 +124,7 @@ class PhotoTranscription:
             "role": "assistant",
             "content": [
                 {
-                    "type": "text",
+                    "type": "output_text",
                     "text": self.transcription,
                 },
             ],
@@ -124,7 +140,7 @@ class PhotoTranscription:
             "role": "user",
             "content": [
                 {
-                    "type": "text",
+                    "type": "input_text",
                     "text": text,
                 },
                 image_to_content(self.image_base64),
@@ -143,7 +159,7 @@ class PhotoTranscription:
             "content": [
                 image_to_content(self.image_base64),
                 {
-                    "type": "text",
+                    "type": "input_text",
                     "text": f"Example of the best manual transcription by a human of the image above:\n{annotation}",
                 },
             ],
@@ -151,13 +167,16 @@ class PhotoTranscription:
 
 
 
-def load_images(images_dir):
+def load_images(archive_name: str, asset: FileAsset = images_asset) -> list[PhotoTranscription]:
     images = []
-    for image_path in sorted(os.listdir(images_dir)):
-        if not image_path.endswith(".jpeg") and not image_path.endswith(".jpg"):
-            continue
+    for image_path in sorted(asset.list_dir(archive_name)):
+        # parse page number as int page_{self.page:03d}_img_001
+        page_number = int(image_path.split("_")[1])
 
-        image = PhotoTranscription.from_jpg_path(os.path.join(images_dir, image_path))
+        image = PhotoTranscription(
+            archive=archive_name.strip("/"),
+            page=page_number,
+        )
         images.append(image)
 
     return images
@@ -165,6 +184,6 @@ def load_images(images_dir):
 
 def image_to_content(base64_image):
     return {
-        "type": "image_url",
-        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+        "type": "input_image",
+        "image_url": f"data:image/jpeg;base64,{base64_image}",
     }

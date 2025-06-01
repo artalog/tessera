@@ -1,11 +1,13 @@
+import os
 import logging
-from PIL import Image
 from openai import OpenAI
-from io import BytesIO
 
+from tessera.lake_client.files import Asset
 
 from tessera.pipelines.common import load_images, image_to_content
 
+annotated_asset = Asset("Archivos_Scan_RBML/annotated")
+images_asset = Asset("Archivos_Scan_RBML/all_extracted_images")
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +23,7 @@ def _images_to_messages(base64_images, max_images_per_message=4):
             "role": "user",
             "content": [
                 {
-                    "type": "text",
+                    "type": "input_text",
                     "text": "Transcribe the following image",
                 },
                 *[
@@ -34,26 +36,13 @@ def _images_to_messages(base64_images, max_images_per_message=4):
     ]
 
 
-def _resize_image(image_bytes, max_size=1024):
-    with Image.open(BytesIO(image_bytes)) as img:
-        img.thumbnail((max_size, max_size), Image.LANCZOS)
-
-        output_buffer = BytesIO()
-        img.save(output_buffer, format="JPEG")
-        # save the image to file for testing
-        with open("resized_image.jpg", "wb") as f:
-            f.write(output_buffer.getvalue())
-
-        return output_buffer.getvalue()
-
-
 def _make_system_messages(images):
     messages = [
         {
             "role": "system",
             "content": [
                 {
-                    "type": "text",
+                    "type": "input_text",
                     "text": """You are an expert Spanish colonial era archivist of documents from 1772 in Puebla, Mexico. The documents are marriage dispensations for the racialized communities of New Spain. The documents were handwritten by notaries and archbishops. You are also an expert in reading cursive and able to spot similar characters.
 
 Here are instructions for transcribing the photos of documents:
@@ -75,19 +64,17 @@ The user will provide the best human-transcribed pages of documents from the sam
 
 def _request(messages):
     client = OpenAI()
-    return client.chat.completions.create(
-        model="gpt-4.5-preview",
-        max_completion_tokens=16383,
-        messages=messages,
+    return client.responses.create(
+        model="gpt-4.1",
+        input=messages,
     )
 
 
 MAX_PHOTOS_PER_CONVERSATION = 4
 
+out_asset = Asset("Archivos_Scan_RBML/gdrive")
 
 def _transcribe_images(system_images, user_images):
-    messages = _make_system_messages(system_images)
-
     user_messages = []
     last_image = None
     for image in user_images:
@@ -102,9 +89,10 @@ def _transcribe_images(system_images, user_images):
             break
 
     if not last_image:
-        raise ValueError("All images have been transcribed")
+        return None, None
 
     log.info(f"Transcribing image: {last_image.image_path}")
+    messages = _make_system_messages(system_images)
     response = _request(
         messages + user_messages[len(user_messages) - MAX_PHOTOS_PER_CONVERSATION :]
     )
@@ -112,28 +100,32 @@ def _transcribe_images(system_images, user_images):
     return response, last_image
 
 
-def transcribe_archive(annotation_path: str, archive_path: str) -> None:
-    system_images = load_images(annotation_path)
-    user_images = load_images(archive_path)
+gdrive_asset = Asset("Archivos_Scan_RBML/gdrive")
 
-    log.info(f"Transcribing archive: {archive_path}")
+def all_transcribed_archives(annotated_asset: str, images_asset: str, archive_folder: str) -> list[str]:
+    metadata_path = os.path.join(archive_folder, "directory.json")
+    if gdrive_asset.exists(metadata_path):
+        log.info("GDrive metadata found, skipping transcription.")
+        return []
 
+
+    system_images = load_images(archive_folder, Asset(annotated_asset))
+    user_images = load_images(archive_folder, Asset(images_asset))
+
+    log.info(f"Transcribing {len(user_images)} images from {archive_folder}")
+
+    out = []
     while True:
-        try:
-            response, image = _transcribe_images(system_images, user_images)
-        except ValueError:
-            log.info("All images have been transcribed.")
-            return
+        response, image = _transcribe_images(system_images, user_images)
+        if response is None:
+            log.info("No more images to transcribe.")
+            break
 
         json_response = response.model_dump_json()
-        image.save_response(json_response)
+        out_path = image.save_response(json_response)
+        out.append(out_path)
 
-        transcription_text = response.choices[0].message.content
+        transcription_text = response.output[0].content[0].text
         log.info(transcription_text)
 
-
-def all_transcribed_archives(annotation_path: str, archive_paths: list) -> dict:
-    for archive_path in archive_paths:
-        transcribe_archive(annotation_path, archive_path)
-
-    return archive_paths
+    return out

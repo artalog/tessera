@@ -1,13 +1,16 @@
-from typing import Any
+import io
 import os
 import json
 import logging
+from typing import Any
+from functools import cache
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaInMemoryUpload
 
 from tessera.pipelines.common import load_images
+from tessera.lake_client.files import Asset
 
 # ------------------------------
 # CONFIGURATION
@@ -17,7 +20,6 @@ from tessera.pipelines.common import load_images
 SERVICE_ACCOUNT_FILE = "credentials.json"
 
 # Path to the local Git repo (root) that we want to scan for .txt files
-LOCAL_REPO_PATH = "./data/Archivos_Scan_RBML/gdrive"
 
 DRIVE_PARENT_FOLDER_ID = "1eHiqnzJHjiB65_Vaz9CgmvYH_oyatwmC"
 
@@ -26,6 +28,8 @@ log = logging.getLogger(__name__)
 
 _drive_service = None
 
+
+out_asset = Asset("Archivos_Scan_RBML/gdrive")
 
 def get_drive_service() -> Any:
     global _drive_service
@@ -39,15 +43,26 @@ def get_drive_service() -> Any:
     return _drive_service
 
 
-def create_folder(local_folder_path: str) -> dict:
-    # We need to create a new folder in Drive
-    folder_name = os.path.basename(local_folder_path)
-    metadata_path = os.path.join(LOCAL_REPO_PATH, folder_name, "directory.json")
+# get parent folder metadata from current path from directory.json
+@cache
+def get_folder_metadata(folder_path: str) -> dict | None:
+    metadata_path = os.path.join(folder_path, "directory.json")
 
-    if os.path.exists(metadata_path):
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-            return metadata
+    if out_asset.exists(metadata_path):
+        metadata = json.load(out_asset.read(metadata_path))
+        return metadata
+
+    return None
+
+
+def create_folder(folder_path: str) -> dict:
+    folder_name = folder_path.strip("/")
+    metadata_path = os.path.join(folder_name, "directory.json")
+
+    metadata = get_folder_metadata(folder_path)
+    if metadata:
+        log.info(f"Folder metadata already exists for {folder_name}")
+        return metadata
 
     # If there's a parent folder in the local structure, find its Drive ID for nesting
     parent_id = DRIVE_PARENT_FOLDER_ID
@@ -61,49 +76,34 @@ def create_folder(local_folder_path: str) -> dict:
         folder_metadata["parents"] = [parent_id]
 
     folder = (
-        get_drive_service.files().create(body=folder_metadata, fields="id").execute()
+        get_drive_service().files().create(body=folder_metadata, fields="id").execute()
     )
     folder_id = folder["id"]
 
     metadata = format_metadata(folder_name, folder_id, is_directory=True)
 
-    # create directory metadata file
-    os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
-
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    out_asset.write(metadata_path, io.BytesIO(json.dumps(metadata, indent=2).encode('utf-8')))
 
     return metadata
 
 
-# get parent folder metadata from current path from directory.json
-def get_parent_folder_metadata(local_file_path: str) -> dict | None:
-    parent_folder_path = os.path.dirname(local_file_path)
-    parent_metadata_path = os.path.join(parent_folder_path, "directory.json")
-
-    if os.path.exists(parent_metadata_path):
-        with open(parent_metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-            return metadata
-
-    return None
 
 
-def create_doc(local_file_path: str, text_content: str) -> dict:
-    doc_name = os.path.splitext(os.path.basename(local_file_path))[0]
-    folder_name = os.path.basename(os.path.dirname(local_file_path))
-    metadata_path = os.path.join(LOCAL_REPO_PATH, folder_name, f"{doc_name}.json")
+def create_doc(file_path: str, text_content: str) -> dict:
+    doc_name = os.path.splitext(os.path.basename(file_path))[0]
+    folder_name = os.path.basename(os.path.dirname(file_path))
 
-    if os.path.exists(metadata_path):
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-            return metadata
+    metadata_path = os.path.join(folder_name, f"{doc_name}.json")
+
+    if out_asset.exists(metadata_path):
+        metadata = json.load(out_asset.read(metadata_path))
+        return metadata
 
     log.info(f"Uploading {doc_name} to Google Drive")
 
-    folder_metadata = get_parent_folder_metadata(metadata_path)
+    folder_metadata = get_folder_metadata(folder_name)
     if not folder_metadata:
-        raise ValueError(f"Could not find parent folder metadata for {local_file_path}")
+        raise ValueError(f"Could not find parent folder metadata for {file_path}")
 
     # Build the metadata for a Google Doc
     file_metadata = {
@@ -119,7 +119,7 @@ def create_doc(local_file_path: str, text_content: str) -> dict:
 
     # Create the file
     new_file = (
-        get_drive_service.files()
+        get_drive_service().files()
         .create(body=file_metadata, media_body=media_body, fields="id")
         .execute()
     )
@@ -129,8 +129,7 @@ def create_doc(local_file_path: str, text_content: str) -> dict:
     file_key = f"{folder_metadata['filename']}/{doc_name}"
 
     metadata = format_metadata(file_key, doc_id, is_directory=False)
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    out_asset.write(metadata_path, io.BytesIO(json.dumps(metadata, indent=2).encode('utf-8')))
 
     return metadata
 
@@ -144,23 +143,19 @@ def format_metadata(
         "transcription_google_drive_doc_id": transcription_google_drive_doc_id,
     }
 
-
-def upload_gdrive(image_folders: list[str]) -> list[dict]:
-    # 1. Auth for Drive
+def upload_archive_to_gdrive(archive_folder: str) -> list[str]:
+    # check if directory metadta file exists at archive path
     output = []
-    for image_folder in image_folders:
-        # check if directory metadta file exists at archive path
-        out = create_folder(image_folder)
+    out = create_folder(archive_folder)
+    output.append(out)
+
+    # load images from archive path
+    images = load_images(archive_folder)
+    for image in images:
+        if not image.has_transcription:
+            log.info(f"Skipping image without transcription: {image.image_path}")
+            continue
+
+        out = create_doc(image.image_path, image.transcription)
         output.append(out)
-
-        # load images from archive path
-        images = load_images(image_folder)
-        for image in images:
-            if not image.has_transcription:
-                log.info(f"Skipping image without transcription: {image.image_path}")
-                continue
-
-            out = create_doc(image.image_path, image.transcription)
-            output.append(out)
-
     return output

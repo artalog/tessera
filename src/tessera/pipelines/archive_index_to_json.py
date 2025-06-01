@@ -1,12 +1,13 @@
 import pandas as pd
 import re
+import io
 
 
-def archive_index_text(input_path: str) -> str:
-    with open(input_path, "r", encoding="utf-8") as file:
-        text = file.read()
+from tessera.lake_client.files import Asset as FileAsset, STORAGE_OPTIONS
 
-    return text
+
+def archive_index_text(asset: str) -> str:
+    return io.TextIOWrapper(FileAsset(asset).read("index.txt")).read()
 
 
 def archive_index_df(archive_index_text: str) -> pd.DataFrame:
@@ -59,7 +60,11 @@ def archive_index_df(archive_index_text: str) -> pd.DataFrame:
     return df
 
 
-def archive_index_to_json(archive_index_df: pd.DataFrame, output_path: str) -> None:
+def archive_index_to_json(archive_index_df: pd.DataFrame, asset: str) -> None:
     archive_index_df.to_json(
-        output_path, orient="records", lines=True, force_ascii=False
+        FileAsset(asset).abs_path("index.json"),
+        orient="records",
+        lines=True,
+        force_ascii=False,
+        storage_options=STORAGE_OPTIONS,
     )

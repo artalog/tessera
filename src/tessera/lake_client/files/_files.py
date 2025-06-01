@@ -3,8 +3,25 @@ from dataclasses import dataclass
 import os
 import io
 from pathlib import Path
+import toml
 
 import boto3
+
+
+def read_toml(path: str = ".streamlit/secrets.toml") -> dict:
+    with open(path, "r") as f:
+        return toml.load(f)
+
+
+# dict to env
+def set_env_from_toml(toml_path: str = ".streamlit/secrets.toml") -> None:
+    os.environ["AWS_REQUEST_CHECKSUM_CALCULATION"] = "when_required"
+    os.environ["AWS_RESPONSE_CHECKSUM_VALIDATION"] = "when_required"
+    secrets = read_toml(toml_path)
+    for key, value in secrets.items():
+        os.environ[key.upper()] = str(value)
+
+set_env_from_toml()
 
 STORAGE_OPTIONS = {
     "key": os.environ["OCI_ACCESS_KEY"],
@@ -62,6 +79,7 @@ class Asset:
         key = [FILES_PREFIX] + key._components + [file_path]
 
         out = "/".join(key)
+        print(f"Generated S3 key: {out}")
         return out
 
     def abs_path(self, file_path: str | Path = "") -> str:
@@ -124,10 +142,10 @@ class Asset:
         return data
 
 
-    def write(self, file_path: str | Path, data) -> None:
+    def write(self, file_path: str | Path, data: io.BytesIO) -> None:
         key = self._s3_key(file_path)
-        s3.upload_fileobj(
-            Fileobj=data,
+        s3.put_object(
+            Body=data.getvalue(),
             Bucket=os.environ["OCI_OBJECT_STORAGE_BUCKET_NAME"],
             Key=key,
         )

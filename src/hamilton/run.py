@@ -7,6 +7,10 @@ from tessera.pipelines import (
 )
 from hamilton import driver
 
+from tessera.lake_client.files import Asset
+
+ASSET_PREFIX = "Archivos_Scan_RBML"
+
 directory = (
     os.path.dirname(os.path.realpath(__file__)) + "/../../data/Archivos_Scan_RBML"
 )
@@ -31,13 +35,30 @@ d = (
 )
 
 
-results = d.execute(
-    ["archive_index_to_json"],
-    inputs={
-        "input_path": directory + "/archive_index/index.txt",
-        "output_path": directory + "/archive_index/index.json",
-    },
-)
+# results = d.execute(
+#     ["archive_index_to_json"],
+#     inputs={
+#         "asset": ASSET_PREFIX + "/archive_index",
+#     },
+# )
+
+
+for archive in Asset("Archivos_Scan_RBML/all_extracted_images").list_dir():
+    print(f"Processing archive: {archive}")
+    results = d.execute(
+        ["all_transcribed_archives"],
+        inputs={
+            "annotated_asset": "Archivos_Scan_RBML/annotated",
+            "images_asset": "Archivos_Scan_RBML/all_extracted_images",
+            "archive_folder": archive,
+        },
+    )
+    results = d.execute(
+        ["upload_archive_to_gdrive"],
+        inputs={
+            "archive_folder": archive,
+        },
+    )
 
 
 # Execute the pipeline, retrieving the aggregated image paths.
